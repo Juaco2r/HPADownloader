@@ -2,6 +2,9 @@
 
 A lightweight GUI application for structured and selective downloading of immunohistochemistry (IHC) cancer images from the Human Protein Atlas (HPA).
 
+![HPA Downloader Concept](assets/screenshots/HPADownloader_concept.png)
+
+
 This tool supports reproducible digital pathology workflows by organizing downloads by **Gene → Antibody → Cancer subtype** and exporting **metadata CSV summaries**.
 
 ---
