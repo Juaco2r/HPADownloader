@@ -49,6 +49,9 @@ This tool supports reproducible digital pathology workflows by organizing downlo
 
 5. Click **Download**.
 
+![HPA Downloader Concept](assets/screenshots/gui_main.png)
+
+
 ---
 
 ## Output Folder Structure
