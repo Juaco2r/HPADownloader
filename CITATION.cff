@@ -12,9 +12,9 @@ authors:
   - given-names: José
     family-names: Rodriguez-Rojas
     orcid: https://orcid.org/0000-0003-4373-5480
-version: 1.1
 date-released: 2026-03-09
-doi: 10.5281/zenodo.18923901
+doi: 10.5281/zenodo.18926273
+version: 1.2
 url: https://github.com/Juaco2r/HPADownloader
 repository-code: https://github.com/Juaco2r/HPADownloader
 repository-artifact: https://github.com/Juaco2r/HPADownloader/releases
