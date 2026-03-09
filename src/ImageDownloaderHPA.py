@@ -14,6 +14,7 @@ import time
 import threading
 import queue
 import requests
+import sys
 from bs4 import BeautifulSoup
 from html import unescape
 from pathlib import Path
@@ -37,6 +38,15 @@ ROOT_DIR = USER_DOWNLOAD_DIR / "HPA Images"
 # Core parsing and download utilities
 # ---------------------------------------------------------------------
 
+
+def resource_path(relative_path):
+    """Get absolute path to resource (works for PyInstaller)."""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = Path(__file__).resolve().parent.parent
+
+    return Path(base_path) / relative_path
 
 def download_html(url):
     """Download and return the HTML content of an HPA page."""
@@ -294,20 +304,17 @@ def download_from_inventory(root_dir, gene_name, inv, img_ext, selection, progre
     gene_dir = root_dir / gene_name
     gene_dir.mkdir(parents=True, exist_ok=True)
 
-    antibodies_sel = selection.get("antibodies", set())
     cancers_by_ab = selection.get("cancers_by_antibody", {})
 
     # Build the final list of image items to download
     download_list = []
-    for ab_id, cancers in inv.items():
-        if antibodies_sel and ab_id not in antibodies_sel:
+    for ab_id, selected_cancers in cancers_by_ab.items():
+        if ab_id not in inv:
             continue
 
-        cancers_sel = cancers_by_ab.get(ab_id, set())
-        for cancer_folder, payload in cancers.items():
-            if cancers_sel and cancer_folder not in cancers_sel:
-                continue
-            download_list.extend(payload["items"])
+        for cancer_folder, payload in inv[ab_id].items():
+            if cancer_folder in selected_cancers:
+                download_list.extend(payload["items"])
 
     total = len(download_list)
     if total == 0:
@@ -362,7 +369,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("HPA Cancer/IHC Image Downloader")
-        icon_path = Path(__file__).resolve().parent.parent / "assets" / "icons" / "hpa_jjrr_icon.ico"
+        icon_path = resource_path("assets/icons/hpa_jjrr_icon.ico")
         try:
             self.iconbitmap(str(icon_path))
         except Exception:
@@ -654,14 +661,20 @@ class App(tk.Tk):
             v.set(False)
 
     def _get_selection(self):
-        """Return the current antibody and cancer subtype selection from the GUI."""
-        antibodies = {ab for ab, v in self.ab_vars.items() if v.get()}
+        """Return the current cancer subtype selection from the GUI."""
         cancers_by_ab = {}
-        for (ab, cancer), v in self.cancer_vars.items():
-            if v.get():
-                cancers_by_ab.setdefault(ab, set()).add(cancer)
-        return {"antibodies": antibodies, "cancers_by_antibody": cancers_by_ab}
 
+        for ab_id in self.ab_vars:
+            selected_cancers = {
+                cancer
+                for (ab, cancer), var in self.cancer_vars.items()
+                if ab == ab_id and var.get()
+            }
+
+            if selected_cancers:
+                cancers_by_ab[ab_id] = selected_cancers
+
+        return {"cancers_by_antibody": cancers_by_ab}
     def on_preview(self):
         """Build the preview inventory from the provided HPA URL."""
         url = self.url_var.get().strip()
@@ -711,6 +724,12 @@ class App(tk.Tk):
             )
             return
 
+        if self.preview_img_ext != self.ext_var.get():
+            messagebox.showwarning(
+                "Format changed",
+                "The output format was changed after preview. Please run Preview again."
+            )
+            return
         selection = self._get_selection()
 
         self.preview_btn.configure(state="disabled")
@@ -720,22 +739,25 @@ class App(tk.Tk):
 
         # Compute the number of selected items for progress tracking
         sel_total = 0
-        antibodies_sel = selection["antibodies"]
         cancers_by_ab = selection["cancers_by_antibody"]
 
-        for ab_id, cancers in self.inv.items():
-            if antibodies_sel and ab_id not in antibodies_sel:
+        for ab_id, selected_cancers in cancers_by_ab.items():
+            if ab_id not in self.inv:
                 continue
-            cancers_sel = cancers_by_ab.get(ab_id, set())
-            for cancer_folder, payload in cancers.items():
-                if cancers_sel and cancer_folder not in cancers_sel:
-                    continue
-                sel_total += payload["count"]
+
+            for cancer_folder, payload in self.inv[ab_id].items():
+                if cancer_folder in selected_cancers:
+                    sel_total += payload["count"]
 
         if sel_total == 0:
             # If nothing is selected, fall back to downloading all detected items
             self.log("Nothing selected; downloading all detected items.")
-            selection = {"antibodies": set(), "cancers_by_antibody": {}}
+            selection = {
+                "cancers_by_antibody": {
+                    ab_id: set(cancers.keys())
+                    for ab_id, cancers in self.inv.items()
+                }
+            }
             sel_total = self.total_items
 
         self.progress.configure(value=0, maximum=max(sel_total, 1))
@@ -782,8 +804,9 @@ class App(tk.Tk):
                     self.set_status(f"Preview ready: {gene} ({total} items)")
                     self.log(f"Preview OK: {gene} | {total} items")
                     self.preview_btn.configure(state="normal")
+                    self.preview_img_ext = self.ext_var.get()
                     self.download_btn.configure(state="normal", text="Download selected")
-
+                    
                 elif kind == "download_ok":
                     self.set_status("Download completed.")
                     self.log("✅ Download completed.")
