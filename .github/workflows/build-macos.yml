@@ -1,0 +1,56 @@
+name: Build macOS app
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Verify files
+        run: |
+          ls -R
+          test -f src/ImageDownloaderHPA.py
+          test -d assets
+
+      - name: Build macOS app
+        run: |
+          pyinstaller \
+            --noconfirm \
+            --windowed \
+            --onedir \
+            --name "HPA Downloader" \
+            --icon "assets/icons/hpa_jjrr_icon.icns" \
+            --add-data "assets:assets" \
+            src/ImageDownloaderHPA.py
+
+      - name: Zip app
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent "HPA Downloader.app" "HPA-Downloader-macOS.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HPA-Downloader-macOS
+          path: dist/HPA-Downloader-macOS.zip
