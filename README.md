@@ -34,6 +34,7 @@ Pre-built executables for **Windows, macOS, and Linux** are available in the **R
 | Windows | `ImageDownloaderHPA-v1.2-windows.exe` |
 | macOS | `HPA-Downloader-v1.2 macOS.zip` |
 | Linux | `ImageDownloaderHPA-v1.2-linux` |
+```
 
 ### Windows
 
