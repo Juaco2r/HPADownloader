@@ -128,6 +128,7 @@ All dependencies can be installed automatically using:
 
 ```bash
 pip install -r requirements.txt
+```
 
 ---
 
