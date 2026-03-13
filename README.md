@@ -28,13 +28,12 @@ This tool supports reproducible digital pathology workflows by organizing downlo
 
 Pre-built executables for **Windows, macOS, and Linux** are available in the **Releases** section.
 
-```markdown
+
 | Operating System | Release File |
 |------------------|-------------|
 | Windows | `ImageDownloaderHPA-v1.2-windows.exe` |
 | macOS | `HPA-Downloader-v1.2 macOS.zip` |
 | Linux | `ImageDownloaderHPA-v1.2-linux` |
-```
 
 ### Windows
 
