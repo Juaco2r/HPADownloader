@@ -20,20 +20,52 @@ This tool supports reproducible digital pathology workflows by organizing downlo
 - Configurable output directory
 - Automatic metadata extraction (patient/staining fields when available)  
 - Retry-safe downloads  
-- Standalone Windows executable available in **Releases**
+- Standalone executables for **Windows, macOS, and Linux** available in **Releases**
 
 ---
 
-## Quick Start (Windows Executable)
+## Quick Start (Pre-built Executables)
 
-1. Download the latest `ImageDownloaderHPA.exe` from **Releases**
-2. Run the executable
-3. Paste a valid HPA cancer/IHC URL
-4. Click **Preview**
-5. Select what you need
-6. Click **Download**
+Pre-built executables for **Windows, macOS, and Linux** are available in the **Releases** section.
 
-> Output is saved to: `~/Downloads/HPA Images/`
+```markdown
+| Operating System | Release File |
+|------------------|-------------|
+| Windows | `ImageDownloaderHPA-v1.2-windows.exe` |
+| macOS | `HPA-Downloader-v1.2 macOS.zip` |
+| Linux | `ImageDownloaderHPA-v1.2-linux` |
+
+### Windows
+
+1. Download `ImageDownloaderHPA-v1.2-windows.exe`
+2. Double-click the executable to start the application.
+
+The first time you run it, **Windows SmartScreen** may show a warning.
+
+Click:
+More info → Run anyway to launch the program.
+
+---
+
+### macOS
+
+1. Download `HPA-Downloader-v1.2 macOS.zip`
+2. Unzip the file
+3. Open the extracted application and run it
+
+If macOS shows a security warning, right-click the app and choose **Open**.
+
+---
+
+### Linux
+
+1. Download `ImageDownloaderHPA-v1.2-linux`
+2. Open a terminal in the download directory
+3. Run:
+
+```bash
+chmod +x ImageDownloaderHPA-v1.2-linux
+./ImageDownloaderHPA-v1.2-linux
 
 ---
 
@@ -67,8 +99,9 @@ Clone the repository:
 git clone https://github.com/Juaco2r/HPADownloader.git
 cd HPADownloader
 ```
-
+```bash
 Install dependencies:
+```
 
 ``` bash
 pip install -r requirements.txt
