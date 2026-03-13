@@ -66,6 +66,7 @@ If macOS shows a security warning, right-click the app and choose **Open**.
 ```bash
 chmod +x ImageDownloaderHPA-v1.2-linux
 ./ImageDownloaderHPA-v1.2-linux
+```
 
 ---
 
