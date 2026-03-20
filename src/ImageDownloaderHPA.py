@@ -1,4 +1,3 @@
-
 """
 HPA Cancer/IHC Image Downloader
 
@@ -38,15 +37,14 @@ ROOT_DIR = USER_DOWNLOAD_DIR / "HPA Images"
 # Core parsing and download utilities
 # ---------------------------------------------------------------------
 
-
 def resource_path(relative_path):
     """Get absolute path to resource (works for PyInstaller)."""
     try:
         base_path = sys._MEIPASS
     except Exception:
         base_path = Path(__file__).resolve().parent.parent
-
     return Path(base_path) / relative_path
+
 
 def download_html(url):
     """Download and return the HTML content of an HPA page."""
@@ -54,9 +52,11 @@ def download_html(url):
     r.raise_for_status()
     return r.text
 
+
 def is_valid_hpa_url(url):
     """Return True if the URL appears to belong to the Human Protein Atlas."""
     return bool(url) and "proteinatlas.org" in url.lower()
+
 
 def extract_gene_name(soup):
     """Extract the gene name from the parsed HPA HTML page."""
@@ -71,11 +71,13 @@ def extract_gene_name(soup):
             return text_gene
     return "UnknownGene"
 
+
 def extract_antibody_ids(soup):
     """Extract unique antibody identifiers from the parsed HPA page."""
     text = soup.get_text(" ", strip=True)
     ids = sorted(set(re.findall(r"\b(HPA\d{6}|CAB\d{6})\b", text)))
     return ids
+
 
 def clean_html_title(html_title):
     """Convert HTML-formatted title text into plain text with line breaks."""
@@ -83,6 +85,7 @@ def clean_html_title(html_title):
     txt = re.sub(r"</?b>", "", txt)
     txt = re.sub(r"<br\s*/?>", "\n", txt)
     return txt.strip()
+
 
 def parse_metadata_from_title(title_text):
     """Parse metadata fields embedded in the HPA image title text."""
@@ -138,6 +141,7 @@ def parse_metadata_from_title(title_text):
 
     return meta
 
+
 def normalize_cancer_folder(cancer_type):
     """Normalize cancer subtype names for safe and consistent folder naming."""
     if cancer_type is None:
@@ -146,23 +150,62 @@ def normalize_cancer_folder(cancer_type):
     ct = ct.replace(",", "")
     return ct or "Unknown"
 
+
+def normalize_antibody_numeric(antibody_id):
+    """
+    Extract normalized numeric antibody ID from strings like HPA000007 or CAB014263.
+    HPA000007 -> '7'
+    CAB014263 -> '14263'
+    """
+    m = re.fullmatch(r"(HPA|CAB)(\d+)", antibody_id.strip())
+    if not m:
+        return None
+    return str(int(m.group(2)))
+
+
+def extract_antibody_numeric_from_href(href):
+    """
+    Extract antibody numeric folder from image URL.
+    Example:
+    https://images.proteinatlas.org/7/1339_B_1_1.tif -> '7'
+    https://images.proteinatlas.org/14263/32472_B_1_1.tif -> '14263'
+    """
+    m = re.search(r"images\.proteinatlas\.org/(\d+)/", href)
+    if not m:
+        return None
+    return str(int(m.group(1)))
+
+
+def normalize_image_href(href):
+    """Convert relative/partial HPA image hrefs into absolute URLs."""
+    if href.startswith("//"):
+        return "https:" + href
+    elif href.startswith("/"):
+        return BASE_IMG_HOST + href.replace("/images_static", "")
+    return href
+
+
 def download_image_with_retry(image_link, image_path, max_retries=3, log=None):
     """Download a single image file with retry support."""
     for attempt in range(max_retries):
         try:
-            if log: log(f"Downloading: {image_path.name}")
+            if log:
+                log(f"Downloading: {image_path.name}")
             r = requests.get(image_link, timeout=20, headers=HEADERS)
             r.raise_for_status()
             with open(image_path, "wb") as out:
                 out.write(r.content)
-            if log: log(f"✓ OK: {image_path.name}")
+            if log:
+                log(f"✓ OK: {image_path.name}")
             return True
         except Exception as e:
-            if log: log(f"✗ Error on attempt {attempt + 1}: {e}")
+            if log:
+                log(f"✗ Error on attempt {attempt + 1}: {e}")
             if attempt < max_retries - 1:
                 time.sleep(1)
             else:
-                if log: log(f"✗ Final download failure: {image_link}")
+                if log:
+                    log(f"✗ Final download failure: {image_link}")
                 return False
 
 
@@ -190,17 +233,20 @@ def build_preview_inventory(url, img_ext=".tif"):
     antibody_ids = extract_antibody_ids(soup)
     if not antibody_ids:
         raise RuntimeError("No antibody IDs were found on the page.")
-    
+
     rows = soup.find_all("tr")
 
     inv = {}
     total = 0
 
     for antibody_id in antibody_ids:
-        antibody_number = re.sub(r'^[HCAPB]*0*', '', antibody_id)
+        antibody_number = normalize_antibody_numeric(antibody_id)
+        if antibody_number is None:
+            continue
 
         inv.setdefault(antibody_id, {})
-        image_counters = {}  # Track per-patient image indices for stable filenames
+        image_counters = {}
+        seen_links_for_antibody = set()
 
         for tr in rows:
             ths = tr.find_all("th")
@@ -222,29 +268,34 @@ def build_preview_inventory(url, img_ext=".tif"):
 
                 for div in cancer_divs:
                     a_tags = div.find_all("a", href=True)
+
                     for a in a_tags:
                         img = a.find("img")
                         if not img or "title" not in img.attrs:
                             continue
 
-                        href = a["href"]
-                        if antibody_number not in href:
-                            continue
+                        href = normalize_image_href(a["href"])
+                        href_antibody_number = extract_antibody_numeric_from_href(href)
 
-                        if href.startswith("//"):
-                            href = "https:" + href
-                        elif href.startswith("/"):
-                            href = BASE_IMG_HOST + href.replace("/images_static", "")
+                        # Exact matching between antibody ID and image URL folder
+                        if href_antibody_number != antibody_number:
+                            continue
 
                         image_link = href
                         if img_ext == ".tif":
-                            image_link = image_link.replace(".jpg", ".tif")
+                            image_link = re.sub(r"\.jpg$", ".tif", image_link, flags=re.IGNORECASE)
 
                         title_text = clean_html_title(img["title"])
                         meta = parse_metadata_from_title(title_text)
 
                         cancer_type = meta["CancerType"] if meta["CancerType"] else cancer_label
                         cancer_folder = normalize_cancer_folder(cancer_type)
+
+                        # Deduplicate repeated detections of the same image inside the same antibody
+                        dedupe_key = (cancer_folder, image_link)
+                        if dedupe_key in seen_links_for_antibody:
+                            continue
+                        seen_links_for_antibody.add(dedupe_key)
 
                         patient_id = meta["PatientID"] if meta["PatientID"] else "unknown"
                         counter_key = (cancer_folder, patient_id)
@@ -273,6 +324,9 @@ def build_preview_inventory(url, img_ext=".tif"):
                             "Location": meta["Location"],
                         })
                         total += 1
+
+    # Remove antibodies that ended up empty after exact filtering
+    inv = {ab_id: cancers for ab_id, cancers in inv.items() if cancers}
 
     return gene_name, inv, total
 
@@ -306,24 +360,30 @@ def download_from_inventory(root_dir, gene_name, inv, img_ext, selection, progre
 
     cancers_by_ab = selection.get("cancers_by_antibody", {})
 
-    # Build the final list of image items to download
+    # Build final list with a second deduplication barrier
     download_list = []
+    seen_downloads = set()
+
     for ab_id, selected_cancers in cancers_by_ab.items():
         if ab_id not in inv:
             continue
 
         for cancer_folder, payload in inv[ab_id].items():
             if cancer_folder in selected_cancers:
-                download_list.extend(payload["items"])
+                for item in payload["items"]:
+                    key = (item["AntibodyID"], item["CancerFolder"], item["ImageLink"])
+                    if key in seen_downloads:
+                        continue
+                    seen_downloads.add(key)
+                    download_list.append(item)
 
     total = len(download_list)
     if total == 0:
         raise RuntimeError("There are no selected items to download, or no items were found on the page.")
-    
-    if log:
-        log(f"Total items to download: {total}")
 
-    # Store rows for the global gene-level summary CSV
+    if log:
+        log(f"Total unique items to download: {total}")
+
     all_rows_for_gene = []
 
     for i, row in enumerate(download_list, start=1):
@@ -340,15 +400,14 @@ def download_from_inventory(root_dir, gene_name, inv, img_ext, selection, progre
         if not image_path.exists():
             download_image_with_retry(row["ImageLink"], image_path, log=log)
         else:
-            if log: log(f"📁 Already exists: {row['ImageName']}")
+            if log:
+                log(f"📁 Already exists: {row['ImageName']}")
 
         all_rows_for_gene.append(row)
 
-        # Update progress
         if progress_cb:
             progress_cb(i, total)
 
-    # Write the gene-level summary CSV
     if all_rows_for_gene:
         gene_summary_path = gene_dir / f"{gene_name}_all_antibodies_summary.csv"
         fieldnames = list(all_rows_for_gene[0].keys())
@@ -380,21 +439,19 @@ class App(tk.Tk):
         self.inv = None
         self.gene_name = None
         self.total_items = 0
+        self.preview_img_ext = None
 
         self.msg_q = queue.Queue()
 
         self.output_dir = ROOT_DIR
         self._build_ui()
 
-        # Log version when the app starts
         self.log(f"HPA Cancer/IHC Image Downloader v{__version__}")
         self.log(f"DOI: {__doi__}")
         self.log(f"Output directory: {self.output_dir}")
         self._poll_queue()
 
     def _build_ui(self):
-
-        # Top menu bar
         menubar = tk.Menu(self)
 
         file_menu = tk.Menu(menubar, tearoff=0)
@@ -419,26 +476,23 @@ class App(tk.Tk):
         menubar.add_cascade(label="Help", menu=help_menu)
         self.config(menu=menubar)
 
-        # ===== TOP AREA =====
         top = ttk.Frame(self, padding=10)
         top.pack(fill="x")
-    
-        # --- Row 1: URL ---
+
         url_row = ttk.Frame(top)
         url_row.pack(fill="x", pady=(0, 6))
-    
+
         ttk.Label(url_row, text="URL:").pack(side="left")
-    
+
         self.url_var = tk.StringVar()
         url_entry = ttk.Entry(url_row, textvariable=self.url_var)
         url_entry.pack(side="left", padx=8, fill="x", expand=True)
-    
-        # --- Row 2: Controls ---
+
         ctrl_row = ttk.Frame(top)
         ctrl_row.pack(fill="x")
-    
+
         ttk.Label(ctrl_row, text="Format:").pack(side="left")
-    
+
         self.ext_var = tk.StringVar(value=".tif")
         ttk.Combobox(
             ctrl_row,
@@ -447,7 +501,7 @@ class App(tk.Tk):
             width=6,
             state="readonly"
         ).pack(side="left", padx=(4, 12))
-    
+
         self.preview_btn = ttk.Button(
             ctrl_row, text="Preview", command=self.on_preview
         )
@@ -461,12 +515,10 @@ class App(tk.Tk):
         )
         self.download_btn.pack(side="left", padx=4)
 
-        # Main split
         main = ttk.PanedWindow(self, orient="horizontal")
-        main.pack(fill="both", expand=True, padx=10, pady=(0,10))
+        main.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        # Left: Tree preview
-        left = ttk.Frame(main, padding=(0,0,6,0))
+        left = ttk.Frame(main, padding=(0, 0, 6, 0))
         main.add(left, weight=3)
 
         ttk.Label(left, text="Preview (tree)").pack(anchor="w")
@@ -477,8 +529,7 @@ class App(tk.Tk):
         self.tree.column("count", width=70, anchor="e")
         self.tree.pack(fill="both", expand=True, pady=6)
 
-        # Right: Selection panel
-        right = ttk.Frame(main, padding=(6,0,0,0))
+        right = ttk.Frame(main, padding=(6, 0, 0, 0))
         main.add(right, weight=2)
 
         ttk.Label(right, text="Selection").pack(anchor="w")
@@ -490,13 +541,15 @@ class App(tk.Tk):
         self.sel_canvas.pack(side="left", fill="both", expand=True, pady=6)
 
         self.sel_frame = ttk.Frame(self.sel_canvas)
-        self.sel_canvas.create_window((0,0), window=self.sel_frame, anchor="nw")
-        self.sel_frame.bind("<Configure>", lambda e: self.sel_canvas.configure(scrollregion=self.sel_canvas.bbox("all")))
+        self.sel_canvas.create_window((0, 0), window=self.sel_frame, anchor="nw")
+        self.sel_frame.bind(
+            "<Configure>",
+            lambda e: self.sel_canvas.configure(scrollregion=self.sel_canvas.bbox("all"))
+        )
 
-        self.ab_vars = {}         # antibody -> BooleanVar
-        self.cancer_vars = {}     # (antibody, cancer) -> BooleanVar
+        self.ab_vars = {}
+        self.cancer_vars = {}
 
-        # Bottom: progress + log
         bottom = ttk.Frame(self, padding=10)
         bottom.pack(fill="x")
 
@@ -504,15 +557,15 @@ class App(tk.Tk):
         self.progress.pack(fill="x")
 
         self.status_var = tk.StringVar(value="Ready.")
-        ttk.Label(bottom, textvariable=self.status_var).pack(anchor="w", pady=(6,0))
+        ttk.Label(bottom, textvariable=self.status_var).pack(anchor="w", pady=(6, 0))
 
-        log_frame = ttk.Frame(self, padding=(10,0,10,10))
+        log_frame = ttk.Frame(self, padding=(10, 0, 10, 10))
         log_frame.pack(fill="both", expand=False)
         ttk.Label(log_frame, text="Log").pack(anchor="w")
         self.log_text = tk.Text(log_frame, height=8, wrap="word")
         self.log_text.pack(fill="both", expand=True, pady=6)
         self.log_text.configure(state="disabled")
-    
+
     def select_output_directory(self):
         """Allow the user to choose a custom output directory."""
         folder = filedialog.askdirectory(
@@ -524,7 +577,6 @@ class App(tk.Tk):
             self.output_dir = Path(folder)
             self.log(f"Output directory set to: {self.output_dir}")
             self.set_status("Output directory updated.")
-
 
     def log(self, msg):
         """Append a message to the GUI log panel."""
@@ -574,6 +626,7 @@ class App(tk.Tk):
         self.inv = None
         self.gene_name = None
         self.total_items = 0
+        self.preview_img_ext = None
 
         self._clear_tree()
         self._clear_selection_panel()
@@ -603,11 +656,13 @@ class App(tk.Tk):
         root_id = self.tree.insert("", "end", text=f"Gene: {self.gene_name}", values=(self.total_items,))
         self.tree.item(root_id, open=True)
 
-        ttk.Label(self.sel_frame, text=f"Gene: {self.gene_name} ({self.total_items} items)").pack(anchor="w", pady=(0,8))
+        ttk.Label(
+            self.sel_frame,
+            text=f"Gene: {self.gene_name} ({self.total_items} items)"
+        ).pack(anchor="w", pady=(0, 8))
 
-        # Selection utility buttons
         util = ttk.Frame(self.sel_frame)
-        util.pack(fill="x", pady=(0,8))
+        util.pack(fill="x", pady=(0, 8))
         ttk.Button(util, text="Select all", command=self._select_all).pack(side="left")
         ttk.Button(util, text="Clear all", command=self._select_none).pack(side="left", padx=6)
 
@@ -616,19 +671,19 @@ class App(tk.Tk):
             ab_node = self.tree.insert(root_id, "end", text=f"Antibody: {ab_id}", values=(ab_count,))
             self.tree.item(ab_node, open=False)
 
-            # Antibody-level checkbox
             ab_var = tk.BooleanVar(value=True)
             self.ab_vars[ab_id] = ab_var
 
             ab_row = ttk.Frame(self.sel_frame)
-            ab_row.pack(fill="x", pady=(6,2))
+            ab_row.pack(fill="x", pady=(6, 2))
             ttk.Checkbutton(
-                ab_row, text=f"{ab_id} ({ab_count})", variable=ab_var,
+                ab_row,
+                text=f"{ab_id} ({ab_count})",
+                variable=ab_var,
                 command=lambda a=ab_id: self._toggle_antibody(a)
             ).pack(anchor="w")
 
-            # Cancer subtype checkboxes for this antibody
-            cancers_box = ttk.Frame(self.sel_frame, padding=(18,0,0,0))
+            cancers_box = ttk.Frame(self.sel_frame, padding=(18, 0, 0, 0))
             cancers_box.pack(fill="x")
 
             for cancer_folder, payload in sorted(cancers.items(), key=lambda kv: kv[0].lower()):
@@ -637,12 +692,15 @@ class App(tk.Tk):
 
                 c_var = tk.BooleanVar(value=True)
                 self.cancer_vars[(ab_id, cancer_folder)] = c_var
-                ttk.Checkbutton(cancers_box, text=f"{cancer_folder} ({c_count})", variable=c_var).pack(anchor="w")
+                ttk.Checkbutton(
+                    cancers_box,
+                    text=f"{cancer_folder} ({c_count})",
+                    variable=c_var
+                ).pack(anchor="w")
 
         self.tree.see(root_id)
 
     def _toggle_antibody(self, antibody_id):
-        # Keep cancer subtype checkboxes synchronized with the antibody checkbox
         state = self.ab_vars[antibody_id].get()
         for (ab, cancer), var in self.cancer_vars.items():
             if ab == antibody_id:
@@ -675,6 +733,7 @@ class App(tk.Tk):
                 cancers_by_ab[ab_id] = selected_cancers
 
         return {"cancers_by_antibody": cancers_by_ab}
+
     def on_preview(self):
         """Build the preview inventory from the provided HPA URL."""
         url = self.url_var.get().strip()
@@ -730,6 +789,7 @@ class App(tk.Tk):
                 "The output format was changed after preview. Please run Preview again."
             )
             return
+
         selection = self._get_selection()
 
         self.preview_btn.configure(state="disabled")
@@ -737,7 +797,6 @@ class App(tk.Tk):
         self.set_status("Downloading...")
         self.log("=== DOWNLOAD ===")
 
-        # Compute the number of selected items for progress tracking
         sel_total = 0
         cancers_by_ab = selection["cancers_by_antibody"]
 
@@ -750,7 +809,6 @@ class App(tk.Tk):
                     sel_total += payload["count"]
 
         if sel_total == 0:
-            # If nothing is selected, fall back to downloading all detected items
             self.log("Nothing selected; downloading all detected items.")
             selection = {
                 "cancers_by_antibody": {
@@ -771,8 +829,13 @@ class App(tk.Tk):
         def worker():
             try:
                 download_from_inventory(
-                    self.output_dir, self.gene_name, self.inv, self.ext_var.get(), selection,
-                    progress_cb=progress_cb, log=log_cb
+                    self.output_dir,
+                    self.gene_name,
+                    self.inv,
+                    self.ext_var.get(),
+                    selection,
+                    progress_cb=progress_cb,
+                    log=log_cb
                 )
                 self.msg_q.put(("download_ok",))
             except Exception as e:
@@ -806,7 +869,7 @@ class App(tk.Tk):
                     self.preview_btn.configure(state="normal")
                     self.preview_img_ext = self.ext_var.get()
                     self.download_btn.configure(state="normal", text="Download selected")
-                    
+
                 elif kind == "download_ok":
                     self.set_status("Download completed.")
                     self.log("✅ Download completed.")
@@ -822,7 +885,6 @@ class App(tk.Tk):
                         state="normal" if self.inv else "disabled",
                         text="Download selected" if self.inv else "Download"
                     )
-                    
 
         except queue.Empty:
             pass
