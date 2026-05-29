@@ -283,46 +283,43 @@ citation_and_methods_helper.md
 
 ---
 
-## Metadata Columns
+## Metadata Columns## Metadata Columns
 
-The exported CSV files may include:
+Exported CSV files include image-level metadata and download audit information. 
+The exact columns may vary depending on the HPA page and the metadata available for each image.
 
-```text
-Gene
-HPASection
-AntibodyID
-Category
-CategoryFolder
-DiagnosticCategory
-DiagnosticCategoryFolder
-ImageName
-ImageLink
-ImageKey
-StoredRelativePath
-PatientID
-Gender
-Age
-Tissue
-TissueCode
-Diagnosis
-DiagnosisCode
-CancerType
-CancerCode
-AnnotationType
-AntibodyStaining
-Intensity
-Quantity
-Location
-AnnotationSummary
-DownloadStatus
-FailureReason
-FileSizeBytes
-SHA256
-DownloadDate
-SoftwareVersion
-```
+Main metadata fields include:
 
-Available metadata depends on what is exposed by the corresponding HPA page and image records.
+- Gene
+- HPASection
+- AntibodyID
+- Category
+- DiagnosticCategory
+- ImageName
+- ImageLink
+- StoredRelativePath
+- PatientID
+- Gender
+- Age
+- Tissue
+- Diagnosis
+- AnnotationType
+- AntibodyStaining
+- Intensity
+- Quantity
+- Location
+- AnnotationSummary
+
+Download and reproducibility fields include:
+
+- DownloadStatus
+- FailureReason
+- FileSizeBytes
+- SHA256
+- DownloadDate
+- SoftwareVersion
+
+Additional technical columns, such as folder-safe category names and HPA codes, may also be included to support reproducibility and downstream analysis.
 
 ---
 
