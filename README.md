@@ -2,9 +2,9 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20465365.svg)](https://doi.org/10.5281/zenodo.20465365)
 
-A lightweight graphical and command-line tool for previewing, selecting, downloading, organizing, and documenting immunohistochemistry (IHC) images from the Human Protein Atlas (HPA).
+A cross-platform graphical and command-line tool for previewing, selecting, downloading, organizing, and documenting immunohistochemistry (IHC) images from the Human Protein Atlas (HPA).
 
-The tool supports HPA **cancer** and **normal tissue** pages and is designed for reproducible digital pathology workflows. Downloaded images are organized using a biomarker-centered structure:
+The software supports both HPA **cancer** and **normal tissue** pages and is designed for reproducible digital pathology workflows. Downloaded images are organized using a biomarker-centered structure:
 
 ```text
 Marker / Antibody / HPA category / HPA diagnostic subtype when available
@@ -48,6 +48,7 @@ The software can be used through a graphical user interface (GUI) or through a c
 - Separate CSV for failed downloads when failures occur
 - JSON reproducibility manifest
 - SHA256 checksums and file-size metadata for file integrity verification
+- Citation and methods helper files
 - Standalone executables for Windows, macOS, and Linux available in Releases
 
 ---
@@ -65,9 +66,9 @@ Pre-built executables for Windows, macOS, and Linux are available in the **Relea
 ### Windows
 
 1. Download `ImageDownloaderHPA-v1.3-windows.exe`.
-2. Double-click the executable to start the application.
+2. Double-click the executable.
 
-The first time you run it, Windows SmartScreen may show a warning. Click:
+The first time you run the application, Windows SmartScreen may display a warning because the executable is not code-signed. Click:
 
 ```text
 More info → Run anyway
@@ -84,23 +85,42 @@ More info → Run anyway
   </tr>
 </table>
 
+No installation is required.
+
 ### macOS
 
 1. Download `HPA-Downloader-v1.3-macOS.zip`.
-2. Unzip the file.
-3. Open the extracted application.
+2. Extract the ZIP archive.
+3. Open the application.
 
-If macOS shows a security warning, right-click the app and choose **Open**.
+If macOS displays a security warning:
+
+- Right-click the application.
+- Select **Open**.
+- Confirm the dialog.
+
+The application will then run normally.
 
 ### Linux
 
 1. Download `ImageDownloaderHPA-v1.3-linux`.
 2. Open a terminal in the download directory.
-3. Run:
+3. Make the file executable:
 
 ```bash
 chmod +x ImageDownloaderHPA-v1.3-linux
+```
+
+4. Run:
+
+```bash
 ./ImageDownloaderHPA-v1.3-linux
+```
+
+If required:
+
+```bash
+sudo apt install python3-tk
 ```
 
 ---
@@ -145,17 +165,14 @@ to inspect downloaded images and reports.
   <img src="assets/screenshots/gui_main.png" alt="Main graphical interface with preview and subtype selection" width="760">
 </p>
 
-### Additional interface examples
+### Additional Interface Example
 
 <table>
   <tr>
-    <td width="50%">
+    <td width="100%">
       <img src="assets/screenshots/ScreenshotBulk.png" alt="Bulk URL manager" width="100%">
-      <br><sub>Bulk URL manager for adding multiple HPA links.</sub>
-    </td>
-    <td width="50%">
-      <img src="assets/screenshots/ScreenshotDownloadComplete.png" alt="Completed download with reports" width="100%">
-      <br><sub>Completed download with report and manifest generation.</sub>
+      <br>
+      <sub>Bulk URL manager for processing multiple Human Protein Atlas URLs in a single workflow.</sub>
     </td>
   </tr>
 </table>
@@ -189,6 +206,73 @@ https://www.proteinatlas.org/ENSG00000066468-FGFR2/cancer/lung+cancer
 https://www.proteinatlas.org/ENSG00000146648-EGFR/cancer/lung+cancer
 https://www.proteinatlas.org/ENSG00000157764-BRAF/tissue/esophagus
 ```
+
+---
+
+## Command-line Usage
+
+The tool can also be used without the graphical interface for reproducible and automated workflows.
+
+### Create a URL file
+
+Example (`urls_cli_example.txt`):
+
+```text
+https://www.proteinatlas.org/ENSG00000066468-FGFR2/cancer/lung+cancer
+https://www.proteinatlas.org/ENSG00000066468-FGFR2/tissue/testis
+```
+
+### Preview only
+
+```bash
+python src/ImageDownloaderHPA.py --url-file urls_cli_example.txt --output "CLI_example_output" --format .tif --preview-only
+```
+
+### Preview and download
+
+```bash
+python src/ImageDownloaderHPA.py --url-file urls_cli_example.txt --output "CLI_example_output" --format .tif
+```
+
+### Direct URL input
+
+```bash
+python src/ImageDownloaderHPA.py \
+  --urls "https://www.proteinatlas.org/ENSG00000066468-FGFR2/cancer/lung+cancer" \
+  --output "HPA Images" \
+  --format .tif
+```
+
+### Example CLI Workflow
+
+The command-line interface supports:
+
+- Preview generation
+- Inventory export
+- Download automation
+- Existing-file detection
+- Reproducible reporting
+
+<p align="center">
+  <img src="assets/screenshots/cli_workflow.png" alt="CLI workflow" width="900">
+</p>
+
+<p align="center">
+  <em>Example CLI workflow showing preview generation, inventory export, download progress, existing-file detection, and reproducibility reporting.</em>
+</p>
+
+### Command-line options
+
+| Option | Description |
+|--------|-------------|
+| `--urls` | One or more HPA URLs |
+| `--url-file` | Text or CSV file containing HPA URLs |
+| `--output` | Output directory |
+| `--format` | Image format: `.tif` or `.jpg` |
+| `--preview-only` | Export preview inventory without downloading images |
+| `--download` | Explicitly download all previewed items |
+
+Running the script without command-line arguments opens the graphical interface.
 
 ---
 
@@ -315,8 +399,7 @@ citation_and_methods_helper.md
 
 ## Metadata Columns
 
-Exported CSV files include image-level metadata and download audit information. 
-The exact columns may vary depending on the HPA page and the metadata available for each image.
+Exported CSV files include image-level metadata and download audit information. The exact columns may vary depending on the HPA page and the metadata available for each image.
 
 Main metadata fields include:
 
@@ -365,53 +448,6 @@ Example:
 ImageName,FileSizeBytes,SHA256
 ID_1506_1.tif,8423912,a3f4c2...
 ```
-
----
-
-## Command-line Usage
-
-The tool can also be used from the command line. This is useful for batch processing, servers, and reproducible pipelines.
-
-### Preview only
-
-```bash
-python src/ImageDownloaderHPA.py \
-  --url-file urls.txt \
-  --output "HPA Images" \
-  --format .tif \
-  --preview-only
-```
-
-### Preview and download
-
-```bash
-python src/ImageDownloaderHPA.py \
-  --url-file urls.txt \
-  --output "HPA Images" \
-  --format .tif
-```
-
-### Direct URL input
-
-```bash
-python src/ImageDownloaderHPA.py \
-  --urls "https://www.proteinatlas.org/ENSG00000066468-FGFR2/cancer/lung+cancer" \
-  --output "HPA Images" \
-  --format .tif
-```
-
-### Command-line options
-
-| Option | Description |
-|--------|-------------|
-| `--urls` | One or more HPA URLs |
-| `--url-file` | Text or CSV file containing HPA URLs |
-| `--output` | Output directory |
-| `--format` | Image format: `.tif` or `.jpg` |
-| `--preview-only` | Export preview inventory without downloading images |
-| `--download` | Explicitly download all previewed items |
-
-Running the script without command-line arguments opens the graphical interface.
 
 ---
 
@@ -493,24 +529,24 @@ Associated metadata and reports are exported automatically.
 
 ## Reproducibility
 
-Each run can generate:
+Each execution can generate:
 
-- a preview inventory
-- a download report
-- a JSON manifest
-- metadata CSV files
+- Preview inventory
+- Download report
+- Metadata CSV exports
+- JSON manifest
 - SHA256 checksums
-- software version information
-- source URL records
-- citation and methods helper text
+- Software version information
+- Source URL records
+- Citation and methods helper text
 
-This allows users to document exactly which HPA URLs were used, which image records were available, which files were downloaded, and whether any downloads failed.
+These outputs allow users to document exactly which HPA URLs were used, which image records were available, which files were downloaded, and whether any downloads failed.
 
 ---
 
 ## Citation
 
-If you use this software in research, please cite the archived version:
+If you use this software in research, please cite:
 
 Rodríguez-Rojas J. (2026).  
 **HPA IHC Image Downloader (v1.3)**.  
