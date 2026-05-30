@@ -10,7 +10,9 @@ The tool supports HPA **cancer** and **normal tissue** pages and is designed for
 Marker / Antibody / HPA category / HPA diagnostic subtype when available
 ```
 
-![HPA Downloader Concept](assets/screenshots/HPADownloader_concept.png)
+<p align="center">
+  <img src="assets/screenshots/HPADownloader_concept.png" alt="HPA Downloader concept" width="760">
+</p>
 
 ---
 
@@ -71,6 +73,17 @@ The first time you run it, Windows SmartScreen may show a warning. Click:
 More info → Run anyway
 ```
 
+<table>
+  <tr>
+    <td width="50%">
+      <img src="assets/screenshots/WindowsFirstExecution.png" alt="Windows SmartScreen first warning" width="100%">
+    </td>
+    <td width="50%">
+      <img src="assets/screenshots/WindowsFirstExecution2Step.png" alt="Windows SmartScreen run anyway option" width="100%">
+    </td>
+  </tr>
+</table>
+
 ### macOS
 
 1. Download `HPA-Downloader-v1.3-macOS.zip`.
@@ -128,7 +141,24 @@ File → Open Output Directory
 
 to inspect downloaded images and reports.
 
-![Main GUI](assets/screenshots/gui_main.png)
+<p align="center">
+  <img src="assets/screenshots/gui_main.png" alt="Main graphical interface with preview and subtype selection" width="760">
+</p>
+
+### Additional interface examples
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="assets/screenshots/ScreenshotBulk.png" alt="Bulk URL manager" width="100%">
+      <br><sub>Bulk URL manager for adding multiple HPA links.</sub>
+    </td>
+    <td width="50%">
+      <img src="assets/screenshots/ScreenshotDownloadComplete.png" alt="Completed download with reports" width="100%">
+      <br><sub>Completed download with report and manifest generation.</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -283,7 +313,7 @@ citation_and_methods_helper.md
 
 ---
 
-## Metadata Columns## Metadata Columns
+## Metadata Columns
 
 Exported CSV files include image-level metadata and download audit information. 
 The exact columns may vary depending on the HPA page and the metadata available for each image.

@@ -48,6 +48,16 @@ USER_DOWNLOAD_DIR = Path.home() / "Downloads"
 ROOT_DIR = USER_DOWNLOAD_DIR / "HPA Images"
 
 
+class OperationCancelled(Exception):
+    """Raised when the user requests cancellation of a preview or download."""
+
+
+def check_cancel(cancel_event):
+    """Stop long-running workflows cooperatively when cancellation is requested."""
+    if cancel_event is not None and cancel_event.is_set():
+        raise OperationCancelled("Operation cancelled by user.")
+
+
 # ---------------------------------------------------------------------
 # Core parsing and download utilities
 # ---------------------------------------------------------------------
@@ -736,10 +746,11 @@ def extract_tissue_staining_by_antibody(soup, antibody_ids):
         }
     return summary
 
-def download_image_with_retry(image_link, image_path, max_retries=3, log=None):
+def download_image_with_retry(image_link, image_path, max_retries=3, log=None, cancel_event=None):
     """Download a single image file with retry support and streaming writes."""
     for attempt in range(max_retries):
         try:
+            check_cancel(cancel_event)
             if log:
                 log(f"Downloading: {image_path.name}")
 
@@ -749,12 +760,20 @@ def download_image_with_retry(image_link, image_path, max_retries=3, log=None):
                 r.raise_for_status()
                 with open(image_path, "wb") as out:
                     for chunk in r.iter_content(chunk_size=1024 * 1024):
+                        check_cancel(cancel_event)
                         if chunk:
                             out.write(chunk)
 
             if log:
                 log(f"✓ OK: {image_path.name}")
             return True
+        except OperationCancelled:
+            try:
+                if image_path.exists():
+                    image_path.unlink()
+            except Exception:
+                pass
+            raise
         except Exception as e:
             # Remove incomplete files so a failed partial download is not treated
             # as an already existing valid image in a future run.
@@ -1121,7 +1140,7 @@ def merge_single_gene_inventory(target_inv, source_inv):
                 target["count"] = target.get("count", 0) + 1
 
 
-def build_preview_inventory(url, img_ext=".tif"):
+def build_preview_inventory(url, img_ext=".tif", cancel_event=None):
     """
     Build preview inventory from either a direct category page or an overview page.
 
@@ -1143,6 +1162,7 @@ def build_preview_inventory(url, img_ext=".tif"):
             total = 0
             failures = []
             for child_url in category_urls:
+                check_cancel(cancel_event)
                 try:
                     child_gene, child_inv, child_total = _build_preview_inventory_single(child_url, img_ext=img_ext)
                     if child_gene and child_gene != "UnknownGene":
@@ -1162,6 +1182,7 @@ def build_preview_inventory(url, img_ext=".tif"):
                 )
 
     # Direct page or fallback behavior.
+    check_cancel(cancel_event)
     return _build_preview_inventory_single(url, img_ext=img_ext)
 
 
@@ -1230,13 +1251,14 @@ def clean_bulk_inventory(bulk_inv):
     return clean, total
 
 
-def build_bulk_preview_inventory(urls, img_ext=".tif", log=None):
+def build_bulk_preview_inventory(urls, img_ext=".tif", log=None, cancel_event=None):
     """Build a preview inventory for multiple HPA URLs."""
     bulk_inv = {}
     for i, url in enumerate(urls, start=1):
+        check_cancel(cancel_event)
         if log:
             log(f"[{i}/{len(urls)}] Previewing: {url}")
-        gene, inv, total = build_preview_inventory(url, img_ext=img_ext)
+        gene, inv, total = build_preview_inventory(url, img_ext=img_ext, cancel_event=cancel_event)
         if log:
             log(f"    ✓ {gene}: {total} items")
         merge_inventory_into_bulk(bulk_inv, gene, inv)
@@ -1623,7 +1645,7 @@ def write_download_report_outputs(root_dir, completed_rows, failed_rows=None, in
     return report_dir
 
 
-def download_from_bulk_inventory(root_dir, bulk_inv, img_ext, selection, progress_cb=None, log=None, input_urls=None):
+def download_from_bulk_inventory(root_dir, bulk_inv, img_ext, selection, progress_cb=None, log=None, input_urls=None, cancel_event=None):
     """Download selected images from a bulk inventory."""
     root_dir.mkdir(parents=True, exist_ok=True)
     download_list = selected_rows_from_bulk_inventory(bulk_inv, selection)
@@ -1636,7 +1658,15 @@ def download_from_bulk_inventory(root_dir, bulk_inv, img_ext, selection, progres
 
     completed_rows = []
     failed_rows = []
+    cancelled = False
     for i, row in enumerate(download_list, start=1):
+        try:
+            check_cancel(cancel_event)
+        except OperationCancelled:
+            cancelled = True
+            if log:
+                log("⚠ Download cancelled by user. Writing partial reports for completed files.")
+            break
         gene = safe_folder_name(row.get("Gene") or "UnknownGene")
         ab_id = row.get("AntibodyID") or "UnknownAntibody"
         category_folder = row.get("CategoryFolder") or row.get("CancerFolder") or "Unknown"
@@ -1677,7 +1707,13 @@ def download_from_bulk_inventory(root_dir, bulk_inv, img_ext, selection, progres
         failure_reason = ""
 
         if not already_exists:
-            download_ok = download_image_with_retry(image_link, image_path, log=log)
+            try:
+                download_ok = download_image_with_retry(image_link, image_path, log=log, cancel_event=cancel_event)
+            except OperationCancelled:
+                cancelled = True
+                if log:
+                    log("⚠ Download cancelled by user. Writing partial reports for completed files.")
+                break
             if not download_ok:
                 failure_reason = "Download failed after retry attempts"
         else:
@@ -1719,10 +1755,16 @@ def download_from_bulk_inventory(root_dir, bulk_inv, img_ext, selection, progres
     write_download_report_outputs(root_dir, completed_rows, failed_rows, input_urls=input_urls, img_ext=img_ext, preview_total=total, log=log)
 
     if log:
-        log(f"Done. Output folder: {root_dir}")
+        if cancelled:
+            log(f"Cancelled. Output folder: {root_dir}")
+        else:
+            log(f"Done. Output folder: {root_dir}")
         log(f"Successful/available files: {len(completed_rows)}")
         if failed_rows:
             log(f"Failed files: {len(failed_rows)}")
+
+    if cancelled:
+        raise OperationCancelled("Operation cancelled by user.")
 
 def download_from_inventory(root_dir, gene_name, inv, img_ext, selection, progress_cb=None, log=None):
     """Backward-compatible wrapper for single-gene downloads."""
@@ -1757,6 +1799,7 @@ class App(tk.Tk):
         self.msg_q = queue.Queue()
         self.output_dir = ROOT_DIR
         self.worker_threads = []
+        self.cancel_event = threading.Event()
         self._closing = False
         self._poll_after_id = None
         self._build_ui()
@@ -1802,7 +1845,8 @@ class App(tk.Tk):
         ctrl_row.pack(fill="x")
         ttk.Label(ctrl_row, text="Format:").pack(side="left")
         self.ext_var = tk.StringVar(value=".tif")
-        ttk.Combobox(ctrl_row, textvariable=self.ext_var, values=[".tif", ".jpg"], width=6, state="readonly").pack(side="left", padx=(4, 12))
+        self.format_combo = ttk.Combobox(ctrl_row, textvariable=self.ext_var, values=[".tif", ".jpg"], width=6, state="readonly")
+        self.format_combo.pack(side="left", padx=(4, 12))
 
         self.preview_btn = ttk.Button(ctrl_row, text="Preview", command=self.on_preview)
         self.preview_btn.pack(side="left", padx=4)
@@ -1810,6 +1854,8 @@ class App(tk.Tk):
         self.bulk_btn.pack(side="left", padx=4)
         self.download_btn = ttk.Button(ctrl_row, text="Download", command=self.on_download, state="disabled")
         self.download_btn.pack(side="left", padx=4)
+        self.cancel_btn = ttk.Button(ctrl_row, text="Cancel", command=self.on_cancel, state="disabled")
+        self.cancel_btn.pack(side="left", padx=4)
 
         out_row = ttk.Frame(top)
         out_row.pack(fill="x", pady=(6, 0))
@@ -1875,6 +1921,39 @@ class App(tk.Tk):
         self.log_text = tk.Text(log_frame, height=9, wrap="word")
         self.log_text.pack(fill="both", expand=True, pady=6)
         self.log_text.configure(state="disabled")
+
+    def _set_busy_state(self, busy, message=None):
+        """Keep buttons and format selection consistent during long operations."""
+        if busy:
+            self.preview_btn.configure(state="disabled")
+            self.bulk_btn.configure(state="disabled")
+            self.download_btn.configure(state="disabled")
+            self.cancel_btn.configure(state="normal")
+            self.format_combo.configure(state="disabled")
+            if message:
+                self.set_status(message)
+        else:
+            self.preview_btn.configure(state="normal")
+            self.bulk_btn.configure(state="normal")
+            self.cancel_btn.configure(state="disabled")
+            if self.bulk_inv:
+                self.download_btn.configure(state="normal", text="Download selected")
+                # Lock the format after preview. The selected format defines both
+                # preview links and output filenames; clear preview to change it.
+                self.format_combo.configure(state="disabled")
+            else:
+                self.download_btn.configure(state="disabled", text="Download")
+                self.format_combo.configure(state="readonly")
+
+    def on_cancel(self):
+        """Request cooperative cancellation of the current preview or download."""
+        if not self._workers_alive():
+            self.cancel_btn.configure(state="disabled")
+            return
+        self.cancel_event.set()
+        self.cancel_btn.configure(state="disabled")
+        self.set_status("Cancelling after the current network request finishes...")
+        self.log("⚠ Cancellation requested. The app will stop at the next safe checkpoint.")
 
     def open_bulk_urls_dialog(self):
         """Open a larger, friendlier dialog for managing several HPA URLs."""
@@ -2165,6 +2244,14 @@ SHA256 is a file integrity checksum. If the image content changes, the SHA256 va
         ttk.Button(frame, text="Close", command=about_win.destroy).pack(anchor="e")
 
     def clear_preview(self):
+        if self._workers_alive():
+            messagebox.showinfo(
+                "Process still running",
+                "A preview or download is still running. Click Cancel first, then clear the preview after it stops.",
+                parent=self,
+            )
+            return
+        self.cancel_event.clear()
         self.inv = None
         self.gene_name = None
         self.bulk_inv = None
@@ -2175,7 +2262,9 @@ SHA256 is a file integrity checksum. If the image content changes, the SHA256 va
         self._clear_selection_panel()
         self.progress.configure(value=0, maximum=1)
         self.download_btn.configure(state="disabled", text="Download")
-        self.set_status("Preview cleared.")
+        self.cancel_btn.configure(state="disabled")
+        self.format_combo.configure(state="readonly")
+        self.set_status("Preview cleared. Choose the image format, then run Preview again.")
         self.log("Preview cleared.")
 
     def _clear_tree(self):
@@ -2437,24 +2526,25 @@ SHA256 is a file integrity checksum. If the image content changes, the SHA256 va
         self.destroy()
 
     def _start_preview_worker(self, urls):
-        self.preview_btn.configure(state="disabled")
-        self.bulk_btn.configure(state="disabled")
-        self.download_btn.configure(state="disabled")
-        self.set_status("Building preview...")
+        self.cancel_event.clear()
+        preview_ext = self.ext_var.get()
+        self._set_busy_state(True, "Building preview...")
         self.progress.configure(value=0, maximum=1)
         self.log("=== PREVIEW ===")
         self.log(f"URLs: {len(urls)}")
         for u in urls:
             self.log(f"- {u}")
-        self.log(f"Format: {self.ext_var.get()}")
+        self.log(f"Format: {preview_ext}")
 
         def log_cb(m):
             self.msg_q.put(("log", m))
 
         def worker():
             try:
-                bulk_inv, total = build_bulk_preview_inventory(urls, img_ext=self.ext_var.get(), log=log_cb)
-                self.msg_q.put(("preview_ok", bulk_inv, total, urls))
+                bulk_inv, total = build_bulk_preview_inventory(urls, img_ext=preview_ext, log=log_cb, cancel_event=self.cancel_event)
+                self.msg_q.put(("preview_ok", bulk_inv, total, urls, preview_ext))
+            except OperationCancelled:
+                self.msg_q.put(("cancelled", "Preview cancelled."))
             except Exception as e:
                 self.msg_q.put(("error", f"Preview failed: {e}"))
 
@@ -2481,20 +2571,16 @@ SHA256 is a file integrity checksum. If the image content changes, the SHA256 va
         if not self.bulk_inv:
             messagebox.showinfo("No preview available", "Run Preview first to build the selection tree.")
             return
-        if self.preview_img_ext != self.ext_var.get():
-            messagebox.showwarning("Format changed", "The output format was changed after preview. Please run Preview again.")
-            return
-
+        # The format is locked after preview, so the download uses the same
+        # extension that was used to build the preview inventory.
         selection = self._get_selection()
         sel_rows = selected_rows_from_bulk_inventory(self.bulk_inv, selection)
         if not sel_rows:
             messagebox.showwarning("Nothing selected", "Select at least one antibody/category to download.")
             return
 
-        self.preview_btn.configure(state="disabled")
-        self.bulk_btn.configure(state="disabled")
-        self.download_btn.configure(state="disabled")
-        self.set_status("Downloading...")
+        self.cancel_event.clear()
+        self._set_busy_state(True, "Downloading...")
         self.log("=== DOWNLOAD ===")
         self.progress.configure(value=0, maximum=max(len(sel_rows), 1))
 
@@ -2509,13 +2595,16 @@ SHA256 is a file integrity checksum. If the image content changes, the SHA256 va
                 download_from_bulk_inventory(
                     self.output_dir,
                     self.bulk_inv,
-                    self.ext_var.get(),
+                    self.preview_img_ext or self.ext_var.get(),
                     selection,
                     progress_cb=progress_cb,
                     log=log_cb,
                     input_urls=self.preview_urls,
+                    cancel_event=self.cancel_event,
                 )
                 self.msg_q.put(("download_ok",))
+            except OperationCancelled:
+                self.msg_q.put(("cancelled", "Download cancelled. Partial reports were saved when applicable."))
             except Exception as e:
                 self.msg_q.put(("error", f"Download failed: {e}"))
 
@@ -2535,11 +2624,12 @@ SHA256 is a file integrity checksum. If the image content changes, the SHA256 va
                     self.progress.configure(value=i, maximum=total)
                     self.set_status(f"Downloading... {i}/{total}")
                 elif kind == "preview_ok":
-                    _, bulk_inv, total, urls = msg
+                    _, bulk_inv, total, urls, preview_ext = msg
                     self.bulk_inv = bulk_inv
                     self.total_items = total
                     self.preview_urls = urls
-                    self.preview_img_ext = self.ext_var.get()
+                    self.preview_img_ext = preview_ext
+                    self.ext_var.set(preview_ext)
                     # Backward compatibility for old single-gene state.
                     if len(bulk_inv) == 1:
                         self.gene_name = next(iter(bulk_inv.keys()))
@@ -2555,22 +2645,22 @@ SHA256 is a file integrity checksum. If the image content changes, the SHA256 va
                         self.log(f"⚠ Could not export preview inventory: {e}")
                     self.set_status(f"Preview ready: {len(bulk_inv)} gene(s), {total} items")
                     self.log(f"Preview OK: {len(bulk_inv)} gene(s) | {total} items")
-                    self.preview_btn.configure(state="normal")
-                    self.bulk_btn.configure(state="normal")
-                    self.download_btn.configure(state="normal", text="Download selected")
+                    self._set_busy_state(False)
                 elif kind == "download_ok":
                     self.set_status("Download completed.")
                     self.log("✅ Download completed.")
-                    self.preview_btn.configure(state="normal")
-                    self.bulk_btn.configure(state="normal")
-                    self.download_btn.configure(state="normal", text="Download selected")
+                    self._set_busy_state(False)
+                elif kind == "cancelled":
+                    self.cancel_event.clear()
+                    self.set_status(msg[1])
+                    self.log("✅ " + msg[1])
+                    self._set_busy_state(False)
                 elif kind == "error":
+                    self.cancel_event.clear()
                     self.set_status("Error.")
                     self.log("❌ " + msg[1])
                     messagebox.showerror("Error", msg[1])
-                    self.preview_btn.configure(state="normal")
-                    self.bulk_btn.configure(state="normal")
-                    self.download_btn.configure(state="normal" if self.bulk_inv else "disabled", text="Download selected" if self.bulk_inv else "Download")
+                    self._set_busy_state(False)
         except queue.Empty:
             pass
         if not self._closing and self.winfo_exists():
