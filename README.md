@@ -1,6 +1,6 @@
 # HPA IHC Image Downloader
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18926273.svg)](https://doi.org/10.5281/zenodo.18926273)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20465365.svg)](https://doi.org/10.5281/zenodo.20465365)
 
 A lightweight graphical and command-line tool for previewing, selecting, downloading, organizing, and documenting immunohistochemistry (IHC) images from the Human Protein Atlas (HPA).
 
@@ -485,7 +485,7 @@ If you use this software in research, please cite the archived version:
 Rodríguez-Rojas J. (2026).  
 **HPA IHC Image Downloader (v1.3)**.  
 Zenodo.  
-https://doi.org/10.5281/zenodo.18926273
+https://doi.org/10.5281/zenodo.20465365
 
 Source code:  
 https://github.com/Juaco2r/HPADownloader

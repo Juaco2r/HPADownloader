@@ -30,7 +30,7 @@ from datetime import datetime
 __version__ = "1.3"
 __author__ = "José Rodríguez-Rojas"
 __github_url__ = "https://github.com/Juaco2r/HPADownloader"
-__doi__ = "https://doi.org/10.5281/zenodo.18923901"
+__doi__ = "https://doi.org/10.5281/zenodo.20465365"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari/537.36"}
 
